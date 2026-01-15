@@ -554,7 +554,7 @@ est_MUE <- function(naive, end_stage, select_index, sub,
     cond_pvaluec(theta, select_index, end_stage, Z_end, cov_S, K, J)
   }
   
-  ## Solve for CMUE median: p(theta) = 0.5
+  ## Solve for CMUE median: p(theta) = 0.5 (0.025/0.975 for confidence interval)
   ## NOTE: bracket range (-1,1) may need to widen for larger effects.
   a <- optimise(function(x) (P_value_sub(x) - 1/2)^2,
                 interval = c(-2, 2) * naive[select_index],
@@ -780,3 +780,4 @@ stopCluster(cls)
 
 time2 <- Sys.time()
 print(time2 - time1)
+
