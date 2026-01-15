@@ -17,7 +17,7 @@ The following files contain the full simulation framework used in **Section 3 of
 
 These scripts implement:
 - Data generation under different outcome types (normal, binary, survival) under a seamless phase II/III design with multi-stage early stopping
-- Estimation methods including **naive**, **stage2**, **CBAE-SI**, **CBAE-MI**, **CMUE_MLE**, **CMUE_ZERO**, and **RB**
+- Estimation methods including **naive**, **stage2**, **CBAE-SI**, **CBAE-MI**, **CMUE-MLE**, **CMUE-ZERO**, and **RB**
 - Parallel computation for large-scale Monte Carlo simulations
 
 Each script is self-contained and corresponds to a specific outcome type discussed in Section 3.
