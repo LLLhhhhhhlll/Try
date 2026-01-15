@@ -256,6 +256,7 @@ est_MUE <- function(MLE,end_stage,select_index,sub,alpha,K,J,up_bround,low_broun
   c(a$minimum,L$minimum,U$minimum,a$objective,L$objective,U$objective)
 }
 set.seed(20240314)
+alpha <- 0.05
 # CMUE-MLE 
 CMUE_MLE <- est_MUE(initial,end_stage,select_index,sub="MLE",alpha,K,J,up_bround,low_bround,n,sigma_control,sigma_treatment)
 # CMUE-ZERO
