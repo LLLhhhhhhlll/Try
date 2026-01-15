@@ -1,70 +1,56 @@
-# Try
+# Code for Section 3 and Section 4 of  
+**“Conditional estimations for seamless phase II/III clinical trials involving multi-stage early stopping”**
 
-This repository contains simulation code and examples supporting the numerical studies in our manuscript on multi-arm multi-stage (MAMS) designs with treatment selection and early stopping.
+This repository contains simulation code and illustrative examples supporting the paper  
+**“Conditional estimations for seamless phase II/III clinical trials involving multi-stage early stopping.”**
 
 The repository is organized to correspond directly to the structure of the paper.
 
 ---
 
-## Repository Structure
+## Section 3: Simulation Studies
 
+The following files contain the full simulation framework used in **Section 3 of the manuscript**:
 
-
----
-
-## Relation to the Manuscript
-
-### Section 3: Simulation Studies
-
-The files  
 - `simulation-normal.R`  
 - `simulation-binary (logOR).R`  
 - `simulation-survival (log HR).R`  
 
-contain the full simulation framework used in **Section 3 of the manuscript**.
-
 These scripts implement:
-- Data generation under different outcome types (normal, binary, survival)
-- Multi-arm multi-stage designs with early stopping
-- Treatment selection at interim analyses
-- Estimation methods including naive, stage-2, SI, MI, MUE, UMVCUE, and RB estimators
+- Data generation under different outcome types (normal, binary, survival) under a seamless phase II/III design with multi-stage early stopping
+- Estimation methods including **naive**, **stage2**, **CBAE-SI**, **CBAE-MI**, **CMUE_MLE**, **CMUE_ZERO**, and **RB**
 - Parallel computation for large-scale Monte Carlo simulations
 
 Each script is self-contained and corresponds to a specific outcome type discussed in Section 3.
 
 ---
 
-### Section 4: Illustrative Examples
+## Section 4: Illustrative Examples
 
-The folder  
-- `example/`
+The following files are used for the illustrative example in **Section 4 of the manuscript**:
 
-contains example code used in **Section 4 of the manuscript** to illustrate:
-- Step-by-step implementation of the proposed methods
-- Practical usage on a single simulated dataset
-- Interpretation of estimators and confidence intervals
+- `example.R`  
+- `example-normal.csv`  
 
+The file `example.R` provides step-by-step code demonstrating how to implement the proposed methods on a single simulated dataset.  
 The file `example-normal.csv` provides example data used in these illustrative analyses.
 
 ---
 
-## Input Parameters (Input List)
+## Input Parameters
 
-Across the simulation scripts, the main input parameters include:
-
-### General Design Parameters
+### Common parameters (used across simulation scripts)
 - `K` : number of experimental treatment arms  
 - `J` : number of stages  
 - `t` : information fractions at each stage  
-- `alpha` : one-sided type I error level  
-- `aftype` : alpha-spending function type (e.g., `sfLDOF`)  
-
-### Sample Size / Information Parameters
 - `unit_n` : per-arm sample size per stage (normal/binary outcomes)  
 - `unit_D` : expected number of events per stage (survival outcomes)  
 - `n` / `D_n` : cumulative sample size or event counts at each stage  
+- `mc_num` / `mc_n` : Monte Carlo size for conditional estimation  
+- `sim` : number of Monte Carlo replicates  
+- `setting` : scenario indicator (`NULL`, `H1`, `peak`, `line`)  
 
-### Outcome-Specific Parameters
+### Distribution-specific parameters
 - **Normal outcome**
   - `mu_control`, `mu_treatment`
   - `sigma_control`, `sigma_treatment`
@@ -80,16 +66,37 @@ Across the simulation scripts, the main input parameters include:
   - `a_t` : accrual time
   - `C` : accrual rate
 
-### Simulation Parameters
-- `sim` : number of Monte Carlo replicates  
-- `setting` : scenario indicator (`NULL`, `H1`, `peak`, `line`)  
-- `mc_num` / `mc_n` : Monte Carlo size for conditional estimation  
-
 ---
 
-## How to Run
+## Example Script Inputs (Section 4)
 
-Each simulation script can be run directly in R, for example:
+### Common inputs
+- `select_index` : index of the experimental arm selected at the end of phase II  
+- `K` : number of experimental treatment arms  
+- `J` : number of stages  
+- `up_bround` : upper stopping boundary (efficacy boundary)  
+- `low_bround` : lower stopping boundary (futility boundary)  
+- `n` : cumulative control-arm sample size at each stage  
+- `sigma_control` / `sigma_treatment` : standard deviations for control and treatment arms  
 
-```r
-source("simulation-normal.R")
+### Method-specific inputs
+- **CBAE-MI**
+  - `initial` : initial value for the iterative bias correction (here taken as the trial-end MLE)
+  - `max_iterations = 20` : maximum number of iterations
+  - `tol = 0.001` : convergence tolerance
+
+- **CBAE-SI**
+  - `initial` : initial value for the single-step bias correction (here taken as the trial-end MLE)
+
+- **CMUE-MLE / CMUE-ZERO**
+  - `sub = "MLE"` : substitution option; choose `"MLE"` or `"ZERO"`
+  - `end_stage` : stage at which the trial stops
+
+- **RB_mc**
+  - `s_all` : length `K + 1` vector  
+    - first `K` elements: stage-1 score statistics for each experimental arm  
+    - element `K + 1`: score statistic for the selected arm at the stopping stage  
+  - `end_stage` : stage at which the trial stops  
+  - `mc_num` : Monte Carlo sample size used in Step 1 of the RB procedure  
+
+---
