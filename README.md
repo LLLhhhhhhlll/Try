@@ -36,7 +36,7 @@ The file `example-normal.csv` provides example data used in these illustrative a
 
 ---
 
-## Input Parameters
+## Simulation Script Inputs (Section 3)
 
 ### Common parameters (used across simulation scripts)
 - `K` : number of experimental treatment arms  
