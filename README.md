@@ -1,5 +1,4 @@
-# Code for Section 3 and Section 4 of  
-**“Conditional estimations for seamless phase II/III clinical trials involving multi-stage early stopping”**
+# Code for Section 3 and Section 4 of “Conditional estimations for seamless phase II/III clinical trials involving multi-stage early stopping”
 
 This repository contains simulation code and illustrative examples supporting the paper  
 **“Conditional estimations for seamless phase II/III clinical trials involving multi-stage early stopping.”**
