@@ -1,0 +1,239 @@
+library(MASS)
+library(data.table)
+library(compiler)
+library(condMVNorm)
+library(pbapply)
+setwd("C:/Users/13379/Desktop/毕业论文/code/simulation")
+# The joint distribution of the Wald test statistics for each group in stage1 and the selected group across stages.
+source("0621-mu_cov_f.R")
+# The joint distribution on page 35 of the essay
+source("0621-mu_cov_umvcue.R")
+
+##### example data generate #####
+set.seed(20240314)
+mu_treatment<- c(0.8,1.5,2.6)
+mu_control <- 0
+sigma_treatment <- c(6,6,6)
+sigma_control <- 6
+K <- length(mu_treatment)
+t <- c(1,2,3,4)/4
+J <- length(t)
+unit_n <- 52
+up_bround <- c(Inf, 3.953902, 2.765978, 2.19173)
+low_bround <- c(0.0000000, 0.1064374, 1.3948029, 2.19173)
+
+n <- t*length(t)*ceiling(unit_n)
+I <- function(j,index)  {1/(sigma_treatment[index]**2/n[j]+sigma_control**2/n[j])}
+Z <- function(da_treat,da_control,j,index) {(mean(da_treat)-mean(da_control))*sqrt(I(j,index))}
+
+all_da <- mvrnorm(n[J],mu=c(mu_control,mu_treatment),
+                  Sigma = diag(c(sigma_control,sigma_treatment)**2,
+                               nrow = K+1,ncol = K+1))
+select_index <-  which.max(mapply(function(x) Z(all_da[c(1:n[1]),x+1],all_da[c(1:n[1]),1],j=1,index=x),x=1:K))
+inter_decide <- function(j,select_index,da){
+  mean_temp <-  Z(da[c(1:n[j]),select_index+1],da[c(1:n[j]),1],j,index=select_index)
+  if(mean_temp<low_bround[j]){"f"}else if(mean_temp>up_bround[j]){"e"} else{"c"}
+}
+inter_outcome <- as.character()
+for (i in 1:J) {
+  inter_outcome[i] <- inter_decide(j=i,select_index,da=all_da)
+}
+end_stage <- first(which(inter_outcome %in% c("e","f")))
+c(end_stage,select_index,inter_outcome[end_stage])
+
+##### calculation #####
+## stage-wise mean
+round(apply(all_da[c(1:n[1]),], 2, mean),3)
+round(apply(all_da[c((n[1]+1):n[2]),], 2, mean),3)
+round(apply(all_da[c((n[2]+1):n[3]),], 2, mean),3)
+
+## naive estimation and CI 
+round(apply(all_da[c(1:n[3]),], 2, mean)-apply(all_da[c(1:n[3]),], 2, mean)[1],3)
+mean(all_da[c(1:n[3]),select_index+1])-mean(all_da[c(1:n[3]),1])+
+  qnorm(0.025)*sqrt((sigma_treatment[select_index]^2+sigma_control^2)/n[3])
+mean(all_da[c(1:n[3]),select_index+1])-mean(all_da[c(1:n[3]),1])-
+  qnorm(0.025)*sqrt((sigma_treatment[select_index]^2+sigma_control^2)/n[3])
+
+# stage2 mean and CI 
+mean(all_da[c((n[2]+1):n[3]),select_index+1])-mean(all_da[c((n[2]+1):n[3]),1])
+mean(all_da[c((n[2]+1):n[3]),select_index+1])-mean(all_da[c((n[2]+1):n[3]),1])+
+  qnorm(0.025)*sqrt((sigma_treatment[select_index]^2+sigma_control^2)/n[1])
+mean(all_da[c((n[2]+1):n[3]),select_index+1])-mean(all_da[c((n[2]+1):n[3]),1])-
+  qnorm(0.025)*sqrt((sigma_treatment[select_index]^2+sigma_control^2)/n[1])
+
+## calculate the MLE as the initial for CBAE & CMUE
+initial <- apply(all_da[1:n[1],], 2, mean)[-1]-apply(all_da[1:n[1],], 2, mean)[1]
+initial[select_index] <- mean(all_da[c(1:n[3]),select_index+1])-mean(all_da[c(1:n[3]),1])
+
+## CBAE
+# MI & SI
+bias_theta  <- function(select_index,theta){
+  I <- function(j,index)  {1/(sigma_treatment[index]**2/n[j]+sigma_control**2/n[j])}
+  mu_cov <- mu_cov_f(control_eff=0,treat_eff=theta,
+                     control_sig=sigma_control,treat_sig=sigma_treatment,
+                     select_index,t,K,J,unit_n,type="cont")
+  mu <- mu_cov$mu; cov <- mu_cov$cov
+  prob_Q <- pmvnorm(lower = c(rep(0,K-1),low_bround[1]),upper = c(rep(Inf,K-1),up_bround[1]),
+                    mean = mu[1:K,],sigma = cov[1:K,1:K])[1]
+  
+  bias <- rep(NA,K)
+  if(!is.na(prob_Q)){
+    mtm <- mtmvnorm(mean = mu[1:K,],sigma = cov[1:K,1:K],
+                    lower = c(rep(0,K-1),low_bround[1]),upper = c(rep(Inf,K-1),up_bround[1]),
+                    doComputeVariance=FALSE)$tmean
+    # the bias for non-selected treatment
+    bias[-select_index] <- (mtm[K]-mtm[-K])/sqrt(I(1,c(1:K)[-select_index]))-theta[-select_index]
+    # the bias for selected treatment under specified stage
+    E_select <- function(stage){
+      mu_t <- mu[1:(K+stage-1),]
+      cov_t <- cov[1:(K+stage-1),1:(K+stage-1)]
+      lower1 <- c(rep(0,K-1),low_bround[1:(stage-1)],-Inf); upper1 <- c(rep(Inf,K-1),up_bround[1:(stage-1)],low_bround[stage])
+      lower2 <- c(rep(0,K-1),low_bround[1:(stage-1)],up_bround[stage]);upper2 <- c(rep(Inf,K-1),up_bround[1:(stage-1)],Inf)
+      (pmvnorm(lower = lower1,upper = upper1,mean = mu_t,sigma = cov_t)[1]*
+          mtmvnorm(mean = mu_t,sigma = cov_t,lower = lower1,upper = upper1,doComputeVariance=FALSE)$tmean[K+stage-1]+
+          pmvnorm(lower = lower2,upper = upper2,mean = mu_t,sigma = cov_t)[1]*
+          mtmvnorm(mean = mu_t,sigma = cov_t,lower = lower2,upper = upper2,doComputeVariance=FALSE)$tmean[K+stage-1])/
+        sqrt(I(stage,select_index))
+    }
+    bias[select_index] <- sum(mapply(E_select, stage=2:J))/prob_Q-theta[select_index]
+  }
+  bias
+}
+MI <- function(initial,select_index,max_iterations=20,tol=0.001){
+  conver <- 0
+  theta_hat <- initial
+  for (i in 1:max_iterations) {
+    bias_temp <- bias_theta(select_index,theta=theta_hat)
+    if(is.na(sum(bias_temp)) | is.infinite(sum(bias_temp))){
+      theta_hat <- initial; conver <- -1; break()
+    }else{
+      theta_hat_new <- initial-bias_temp
+    }
+    euc.dis <- sqrt(sum((theta_hat - theta_hat_new)^2))
+    if(euc.dis<=tol){
+      theta_hat <- theta_hat_new; conver <- 1; break()
+    }else{
+      theta_hat <- theta_hat_new
+    }
+  }
+  c(conver,theta_hat[select_index])
+}
+SI <- function(initial,select_index){
+  (initial-bias_theta(select_index,initial))[select_index]
+}  
+MIc <- cmpfun(MI)
+set.seed(20240314)
+# CBAE-MI
+round(MIc(initial,select_index),3)
+# CBAE-SI 
+round(SI(initial,select_index),3)
+
+##### CMUE #####
+est_MUE <- function(MLE,end_stage,select_index,sub){
+  I <- function(j,index)  {1/(sigma_treatment[index]**2/n[j]+sigma_control**2/n[j])}
+  Z_end <- MLE[select_index]*sqrt(I(end_stage,select_index))
+  cond_pvalue <- function(theta,select_index,end_stage,Z_end){
+    mu_cov <- mu_cov_f(control_eff=0,treat_eff=theta,select_index,
+                       control_sig=sigma_control,treat_sig=sigma_treatment,
+                       t,K,J,unit_n,type="con")
+    mu <- mu_cov$mu; cov <- mu_cov$cov
+    
+    prob_Q <- mvtnorm::pmvnorm(lower = c(rep(0,K-1),low_bround[1]),
+                               upper = c(rep(Inf,K-1),up_bround[1]),
+                               mean = mu[1:K,],sigma = cov[1:K,1:K])[1]
+    p_value <- function(end_stage,select_index,Z_end){
+      # The probability of crossing the upper boundary earlier. 
+      P_stage <- function(stage,stop,Z_end){
+        new_mu_s <- mu[1:(K+stage-1),]; new_cov_s=cov[1:(K+stage-1),1:(K+stage-1)]
+        if(stop==T){
+          P <-  mvtnorm::pmvnorm(lower = c(rep(0,K-1),low_bround[1:(stage-1)],Z_end),
+                                 upper = c(rep(Inf,K-1),up_bround[1:(stage-1)],Inf),
+                                 mean = new_mu_s,sigma= new_cov_s)[1]      
+        }else if(stop==F){
+          P <-   mvtnorm::pmvnorm(lower = c(rep(0,K-1),low_bround[1:(stage-1)],up_bround[stage]),
+                                  upper = c(rep(Inf,K-1),up_bround[1:(stage-1)],Inf),
+                                  mean = new_mu_s,sigma= new_cov_s)[1]
+        }
+        if(is.na(P)){0}else{P}
+      }  
+      if(end_stage==2){
+        numerator <- P_stage(stage=end_stage,stop=T,Z_end)
+      }else if(end_stage > 2){
+        numerator <- sum(mapply(P_stage, stage=2:(end_stage-1),stop=F,Z_end),
+                         P_stage(stage=end_stage,stop=T,Z_end)) 
+      }
+      value <- 1
+      if((!is.na(numerator)) & (!is.na(prob_Q))){
+        if(prob_Q > 0){
+          if(numerator/prob_Q >=1){ value <- 1
+          }else{value <- numerator/prob_Q}
+        }
+      }
+      value
+    }
+    p_value(end_stage,select_index,Z_end)
+  }  
+  cond_pvaluec <- cmpfun(cond_pvalue)
+  P_value_sub <- function(select_index,sub="MLE",x){
+    theta <- rep(x,K)
+    if(sub=="MLE"){
+      theta[-select_index] <- MLE[-select_index]
+    }else{
+      theta[-select_index] <- rep(0,K-1)
+    }
+    cond_pvaluec(theta,select_index,end_stage,Z_end)
+  }
+  a <- optimise(function(x) (P_value_sub(select_index,sub,x)-1/2)^2,c(-5,5),tol=0.001)
+  L <- optimise(function(x) (P_value_sub(select_index,sub,x)-0.025)^2,c(-5,5),tol=0.001)
+  U <- optimise(function(x) (P_value_sub(select_index,sub,x)-0.975)^2,c(-5,5),tol=0.001)
+  c(a$minimum,L$minimum,U$minimum,a$objective,L$objective,U$objective)
+}
+# CMUE-MLE 
+est_MUE(initial,end_stage,select_index,"MLE")
+# CMUE-ZERO
+est_MUE(initial,end_stage,select_index,"ZERO")
+
+##### RB #####
+UMVCUE_est_mc <- function(X,select_index,end_stage,mc_n){
+  I <- function(j,index)  {1/(sigma_treatment[index]**2/n[j]+sigma_control**2/n[j])}
+  mu_cov <- mu_cov_UMVCUE(control_eff=0,treat_eff=rep(0,K),
+                          control_sig=sigma_control,treat_sig=sigma_treatment,
+                          select_index,end_stage,
+                          t,K,J,unit_n,type="con")
+  # Generate The Wald test statistics for each stage of the selected group and the stage 1 statistics for the control group.
+  mc <- rcmvnorm(mc_n,mean=mu_cov$mu,sigma = mu_cov$cov,
+                 dependent=1:end_stage,given=c((end_stage+1):(end_stage+2)),
+                 X.given=c(X[1],X[select_index+1])*sqrt(I(end_stage,select_index)))
+  if(end_stage > 2){
+    mc_stage2 <- (sqrt(I(2,select_index))*mc[,2]-sqrt(I(1,select_index))*mc[,1])/
+      (I(2,select_index)-I(1,select_index))
+  }else{
+    mc_stage2 <- (I(2,select_index)*(X[select_index+1]-X[1])-sqrt(I(1,select_index))*mc[,1])/
+      (I(2,select_index)-I(1,select_index))
+  }
+  low_bround_mc <- matrix(low_bround[1:(end_stage-1)],nrow = mc_n, ncol = end_stage-1,byrow = T)
+  up_bround_mc <- matrix(up_bround[1:(end_stage-1)],nrow = mc_n, ncol = end_stage-1,byrow = T)
+  low_bround_mc[,1] <- apply(rbind(matrix(low_bround[1],ncol = mc_n),
+                                   (matrix(X[-c(1,select_index+1)],nrow = K-1, ncol = mc_n)-
+                                      matrix(mc[,end_stage]/sqrt(I(1,select_index)),nrow = K-1, ncol = mc_n, byrow = T))*
+                                     sqrt(I(1,c(1:K)[-select_index]))),2,max)
+  mc_re <- apply(cbind(mc[,1:(end_stage-1)] >= low_bround_mc,
+                       mc[,1:(end_stage-1)] <= up_bround_mc), 1, all)
+  re <- rep(NA,4)
+  if(sum(mc_re) > 1){
+    # Calculate the sample mean and variance.
+    mc_est <- mean(mc_stage2[mc_re])
+    SE <- sqrt((sigma_treatment[select_index]**2+sigma_control**2)/(n[2]-n[1])-
+                 var(mc_stage2[mc_re]))
+    re <- c(mean(mc_re),mc_est,mc_est+qnorm(alpha/2)*SE,mc_est-qnorm(alpha/2)*SE)
+  }
+  re
+}
+set.seed(20240314)
+alpha <- 0.05
+mc_n <- 100000
+# X represents the mean of each group after the trial ends.
+X <- apply(all_da[1:n[1],], 2, mean)
+X[1] <- mean(all_da[1:n[3],1])
+X[select_index+1] <- mean(all_da[1:n[3],select_index+1])
+UMVCUE_est_mc(X,select_index,end_stage,mc_n)
